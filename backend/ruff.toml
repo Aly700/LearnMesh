@@ -1,0 +1,21 @@
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (modern Python syntax)
+    "B",   # flake8-bugbear (common pitfalls)
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "B008",  # function-call-in-default-argument — FastAPI Depends() is idiomatic
+    "UP042", # replace-str-enum — existing StrEnum patterns work fine
+    "UP047", # non-pep695-generic-function — PEP 695 syntax is too new to enforce
+]
+
+[lint.per-file-ignores]
+"app/db/bootstrap.py" = ["E501"] # seed data strings are naturally long

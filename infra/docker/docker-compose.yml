@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: learnmesh-postgres
+    environment:
+      POSTGRES_DB: learnmesh
+      POSTGRES_USER: learnmesh
+      POSTGRES_PASSWORD: learnmesh
+    ports:
+      - "5432:5432"
+    volumes:
+      - learnmesh-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U learnmesh -d learnmesh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: infra/docker/backend.Dockerfile
+    container_name: learnmesh-backend
+    environment:
+      APP_ENV: docker
+      DATABASE_URL: postgresql+psycopg://learnmesh:learnmesh@postgres:5432/learnmesh
+      CORS_ORIGINS: http://localhost:5173
+      AUTO_SEED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: infra/docker/frontend.Dockerfile
+    container_name: learnmesh-frontend
+    environment:
+      VITE_API_BASE_URL: /api/v1
+      VITE_DEV_PROXY_TARGET: http://backend:8000
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+
+volumes:
+  learnmesh-postgres-data:
