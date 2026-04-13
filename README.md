@@ -1,6 +1,6 @@
 # LearnMesh
 
-LearnMesh is a full-stack developer learning and content platform designed to feel like an app-store-style LMS for technical education. Phase 2 extends the Phase 1 MVP with richer browsing, individual detail pages, markdown-rendered lessons, stronger learning-path UX, and a more polished product surface that is easier to demo on GitHub or in an interview.
+LearnMesh is a full-stack developer learning and content platform designed to feel like an app-store-style LMS for technical education. Phase 2 extends the Phase 1 MVP with richer browsing, individual detail pages, markdown-rendered lessons, stronger learning-path UX, and a more polished product surface
 
 ## Why this project exists
 
