@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import TypeVar
 
 from fastapi import HTTPException, status
@@ -181,6 +182,31 @@ def list_catalog_items(
 
     catalog_items.sort(key=lambda item: (item.updated_at, item.id), reverse=True)
     return [serialize_content_summary(item) for item in catalog_items]
+
+
+def list_published_feed_items(
+    db: Session,
+    content_type: ContentKind | None = None,
+    updated_since: datetime | None = None,
+) -> list[Course | Tutorial | Lab]:
+    """Return published content for the syndication feed.
+
+    Deterministic ordering: ``updated_at DESC``, then ``slug ASC`` for ties.
+    ``updated_since`` is inclusive (>=).
+    """
+    models: list[type[Course] | type[Tutorial] | type[Lab]] = (
+        [CONTENT_MODEL_MAP[content_type]] if content_type is not None else [Course, Tutorial, Lab]
+    )
+    results: list[Course | Tutorial | Lab] = []
+
+    for model in models:
+        statement = select(model).where(model.status == PublicationStatus.published.value)
+        if updated_since is not None:
+            statement = statement.where(model.updated_at >= updated_since)
+        results.extend(db.scalars(statement).all())
+
+    results.sort(key=lambda item: (-item.updated_at.timestamp(), item.slug))
+    return results
 
 
 def normalize_tag_filters(tags: str | None) -> list[str]:
