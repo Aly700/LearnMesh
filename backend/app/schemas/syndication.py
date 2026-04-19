@@ -34,3 +34,13 @@ class FeedMeta(BaseModel):
 class FeedResponse(BaseModel):
     meta: FeedMeta
     items: list[FeedItem]
+
+
+class FeedItemDetail(FeedItem):
+    """Detail-friendly syndication payload for a single published content item.
+
+    Superset of ``FeedItem`` — same stable identifier (``content_type`` + ``slug``),
+    same public fields, plus the long-form markdown body.
+    """
+
+    body_markdown: str

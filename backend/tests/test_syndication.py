@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.content import Course, Lab, Tutorial
 
 FEED_URL = "/api/v1/syndication/feed"
+CONTENT_URL = "/api/v1/syndication/content"
 
 
 @pytest.fixture()
@@ -138,3 +139,58 @@ class TestUpdatedSince:
     def test_updated_since_invalid_format(self, client):
         resp = client.get(FEED_URL, params={"updated_since": "not-a-date"})
         assert resp.status_code == 422
+
+
+class TestContentDetail:
+    def test_returns_published_item_with_body(self, client, published_course):
+        resp = client.get(f"{CONTENT_URL}/course/syndication-course")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["content_type"] == "course"
+        assert data["slug"] == "syndication-course"
+        assert data["title"] == "Syndication Course"
+        assert data["difficulty"] == "beginner"
+        assert data["estimated_minutes"] == 30
+        assert data["tags"] == ["python", "testing"]
+        assert data["author"] == "Test Author"
+        assert data["body_markdown"] == "# Content"
+        assert "created_at" in data
+        assert "updated_at" in data
+        # Must NOT include internal fields
+        assert "id" not in data
+        assert "status" not in data
+
+    def test_draft_returns_404(self, client, draft_lab):
+        resp = client.get(f"{CONTENT_URL}/lab/draft-lab")
+        assert resp.status_code == 404
+
+    def test_unknown_slug_returns_404(self, client):
+        resp = client.get(f"{CONTENT_URL}/course/does-not-exist")
+        assert resp.status_code == 404
+
+    def test_mismatched_content_type_returns_404(self, client, published_course):
+        # The course exists and is published, but asking under `/lab/` must 404.
+        resp = client.get(f"{CONTENT_URL}/lab/syndication-course")
+        assert resp.status_code == 404
+
+    def test_invalid_content_type_returns_422(self, client):
+        resp = client.get(f"{CONTENT_URL}/podcast/anything")
+        assert resp.status_code == 422
+
+    def test_no_auth_required(self, client, published_course):
+        resp = client.get(f"{CONTENT_URL}/course/syndication-course")
+        assert resp.status_code == 200
+
+    def test_detail_is_superset_of_feed_item(self, client, published_course):
+        feed_resp = client.get(FEED_URL)
+        detail_resp = client.get(f"{CONTENT_URL}/course/syndication-course")
+        assert feed_resp.status_code == 200
+        assert detail_resp.status_code == 200
+        feed_item = feed_resp.json()["items"][0]
+        detail_item = detail_resp.json()
+        # Every FeedItem field must match exactly on the detail response.
+        for key, value in feed_item.items():
+            assert detail_item[key] == value
+        # Detail adds body_markdown; feed never includes it.
+        assert "body_markdown" in detail_item
+        assert "body_markdown" not in feed_item

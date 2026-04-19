@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.models.content import ContentKind
-from app.schemas.syndication import FeedItem, FeedMeta, FeedResponse
-from app.services.content import list_published_feed_items
+from app.schemas.syndication import FeedItem, FeedItemDetail, FeedMeta, FeedResponse
+from app.services.content import get_published_feed_item_or_404, list_published_feed_items
 
 router = APIRouter(prefix="/syndication", tags=["Syndication"])
 
@@ -34,3 +34,22 @@ def get_feed(
         meta=FeedMeta(total=len(feed_items), generated_at=datetime.now(UTC)),
         items=feed_items,
     )
+
+
+@router.get(
+    "/content/{content_type}/{slug}",
+    response_model=FeedItemDetail,
+    summary="Public single-item syndication detail",
+    description=(
+        "Returns one published content item (course, tutorial, or lab) addressed by the "
+        "stable external identifier `content_type` + `slug`. Unpublished or missing items "
+        "return 404 so drafts are not exposed."
+    ),
+)
+def get_content_detail(
+    content_type: ContentKind,
+    slug: str,
+    db: Session = Depends(get_db),
+) -> FeedItemDetail:
+    item = get_published_feed_item_or_404(db, content_type, slug)
+    return FeedItemDetail.model_validate(item)

@@ -209,6 +209,32 @@ def list_published_feed_items(
     return results
 
 
+def get_published_feed_item_or_404(
+    db: Session,
+    content_type: ContentKind,
+    slug: str,
+) -> Course | Tutorial | Lab:
+    """Return one published content item by ``(content_type, slug)`` for syndication.
+
+    Filters on ``status = published`` inside the query. Missing rows and
+    unpublished rows both return 404 so drafts are not leaked to external
+    consumers.
+    """
+    model = CONTENT_MODEL_MAP[content_type]
+    item = db.scalar(
+        select(model).where(
+            model.slug == slug,
+            model.status == PublicationStatus.published.value,
+        )
+    )
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Published {content_type.value} with slug '{slug}' was not found.",
+        )
+    return item
+
+
 def normalize_tag_filters(tags: str | None) -> list[str]:
     if tags is None:
         return []
