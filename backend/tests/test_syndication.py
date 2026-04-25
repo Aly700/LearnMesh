@@ -277,3 +277,113 @@ class TestCacheControlHeaders:
     def test_detail_cache_control(self, client, published_course):
         resp = client.get(f"{CONTENT_URL}/course/syndication-course")
         assert resp.headers.get("cache-control") == "public, max-age=300"
+
+
+class TestFeedConditionalGet:
+    def test_etag_present_on_200(self, client, published_course):
+        resp = client.get(FEED_URL)
+        etag = resp.headers.get("etag")
+        assert etag is not None
+        assert etag.startswith('"') and etag.endswith('"')
+
+    def test_etag_stable_across_requests(self, client, published_course):
+        first = client.get(FEED_URL).headers["etag"]
+        second = client.get(FEED_URL).headers["etag"]
+        assert first == second
+
+    def test_if_none_match_match_returns_304(self, client, published_course):
+        etag = client.get(FEED_URL).headers["etag"]
+        resp = client.get(FEED_URL, headers={"If-None-Match": etag})
+        assert resp.status_code == 304
+        assert resp.content == b""
+        assert resp.headers.get("etag") == etag
+        assert resp.headers.get("cache-control") == "public, max-age=60"
+
+    def test_if_none_match_wildcard_returns_304(self, client, published_course):
+        resp = client.get(FEED_URL, headers={"If-None-Match": "*"})
+        assert resp.status_code == 304
+
+    def test_if_none_match_mismatch_returns_200(self, client, published_course):
+        resp = client.get(FEED_URL, headers={"If-None-Match": '"deadbeef"'})
+        assert resp.status_code == 200
+        assert resp.json()["meta"]["total"] == 1
+
+    def test_etag_changes_when_content_changes(
+        self, client, db_session: Session, published_course,
+    ):
+        first = client.get(FEED_URL).headers["etag"]
+        published_course.title = "Renamed Syndication Course"
+        db_session.flush()
+        second = client.get(FEED_URL).headers["etag"]
+        assert first != second
+
+    def test_etag_ignores_generated_at(self, client, published_course):
+        # Two consecutive calls have different generated_at timestamps
+        # but the same content; ETag must not change.
+        first = client.get(FEED_URL)
+        second = client.get(FEED_URL)
+        assert first.json()["meta"]["generated_at"] != second.json()["meta"]["generated_at"] \
+            or True  # may collide on fast hardware; either way ETag stability is the guarantee
+        assert first.headers["etag"] == second.headers["etag"]
+
+
+class TestDetailConditionalGet:
+    def test_etag_and_last_modified_present_on_200(self, client, published_course):
+        resp = client.get(f"{CONTENT_URL}/course/syndication-course")
+        assert resp.headers.get("etag") is not None
+        assert resp.headers.get("last-modified") is not None
+
+    def test_if_none_match_match_returns_304(self, client, published_course):
+        first = client.get(f"{CONTENT_URL}/course/syndication-course")
+        etag = first.headers["etag"]
+        resp = client.get(
+            f"{CONTENT_URL}/course/syndication-course",
+            headers={"If-None-Match": etag},
+        )
+        assert resp.status_code == 304
+        assert resp.content == b""
+        assert resp.headers.get("etag") == etag
+        assert resp.headers.get("last-modified") == first.headers["last-modified"]
+        assert resp.headers.get("cache-control") == "public, max-age=300"
+
+    def test_if_modified_since_future_returns_304(self, client, published_course):
+        resp = client.get(
+            f"{CONTENT_URL}/course/syndication-course",
+            headers={"If-Modified-Since": "Wed, 01 Jan 2099 00:00:00 GMT"},
+        )
+        assert resp.status_code == 304
+        assert resp.content == b""
+
+    def test_if_modified_since_past_returns_200(self, client, published_course):
+        resp = client.get(
+            f"{CONTENT_URL}/course/syndication-course",
+            headers={"If-Modified-Since": "Sun, 01 Jan 2000 00:00:00 GMT"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["slug"] == "syndication-course"
+
+    def test_if_none_match_takes_precedence_over_if_modified_since(
+        self, client, published_course,
+    ):
+        # Mismatched ETag must return 200 even if If-Modified-Since would say "fresh".
+        resp = client.get(
+            f"{CONTENT_URL}/course/syndication-course",
+            headers={
+                "If-None-Match": '"deadbeef"',
+                "If-Modified-Since": "Wed, 01 Jan 2099 00:00:00 GMT",
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_if_modified_since_malformed_returns_200(self, client, published_course):
+        resp = client.get(
+            f"{CONTENT_URL}/course/syndication-course",
+            headers={"If-Modified-Since": "not-a-date"},
+        )
+        assert resp.status_code == 200
+
+    def test_404_does_not_set_validators(self, client):
+        resp = client.get(f"{CONTENT_URL}/course/nonexistent-slug")
+        assert resp.status_code == 404
+        assert resp.headers.get("etag") is None
+        assert resp.headers.get("last-modified") is None

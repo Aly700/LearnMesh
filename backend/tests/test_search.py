@@ -266,3 +266,38 @@ class TestSearchPagination:
         resp = client.get(SEARCH_URL, params={"q": "docker"})
         assert resp.status_code == 200
         assert resp.headers.get("cache-control") == "public, max-age=60"
+
+
+class TestSearchConditionalGet:
+    def test_etag_present_on_200(self, client: TestClient, seeded_content: None) -> None:
+        resp = client.get(SEARCH_URL, params={"q": "docker"})
+        etag = resp.headers.get("etag")
+        assert etag is not None
+        assert etag.startswith('"') and etag.endswith('"')
+
+    def test_etag_stable_across_requests(self, client: TestClient, seeded_content: None) -> None:
+        first = client.get(SEARCH_URL, params={"q": "docker"}).headers["etag"]
+        second = client.get(SEARCH_URL, params={"q": "docker"}).headers["etag"]
+        assert first == second
+
+    def test_etag_differs_between_queries(self, client: TestClient, seeded_content: None) -> None:
+        a = client.get(SEARCH_URL, params={"q": "docker"}).headers["etag"]
+        b = client.get(SEARCH_URL, params={"q": "kubernetes"}).headers["etag"]
+        assert a != b
+
+    def test_if_none_match_match_returns_304(self, client: TestClient, seeded_content: None) -> None:
+        etag = client.get(SEARCH_URL, params={"q": "docker"}).headers["etag"]
+        resp = client.get(SEARCH_URL, params={"q": "docker"}, headers={"If-None-Match": etag})
+        assert resp.status_code == 304
+        assert resp.content == b""
+        assert resp.headers.get("etag") == etag
+        assert resp.headers.get("cache-control") == "public, max-age=60"
+
+    def test_if_none_match_mismatch_returns_200(self, client: TestClient, seeded_content: None) -> None:
+        resp = client.get(
+            SEARCH_URL,
+            params={"q": "docker"},
+            headers={"If-None-Match": '"deadbeef"'},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["query"] == "docker"
