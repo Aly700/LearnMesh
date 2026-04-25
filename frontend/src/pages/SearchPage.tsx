@@ -148,8 +148,8 @@ export const SearchPage = () => {
           <>
             <div className="section-heading">
               <h3>
-                {response.total} result{response.total === 1 ? "" : "s"} for "
-                {response.query}"
+                Showing {response.results.length} of {response.total} result
+                {response.total === 1 ? "" : "s"} for "{response.query}"
               </h3>
               <span className="footer-note">
                 Ranked by weighted matches over title, tags, description, author.

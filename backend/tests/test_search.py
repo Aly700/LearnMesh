@@ -72,7 +72,14 @@ class TestSearchBasics:
         resp = client.get(SEARCH_URL, params={"q": "docker"})
         assert resp.status_code == 200
         body = resp.json()
-        assert body == {"query": "docker", "total": 0, "results": []}
+        assert body == {
+            "query": "docker",
+            "total": 0,
+            "limit": 20,
+            "offset": 0,
+            "has_more": False,
+            "results": [],
+        }
 
     def test_no_auth_required(self, client: TestClient, seeded_content: None) -> None:
         resp = client.get(SEARCH_URL, params={"q": "docker"})
@@ -201,7 +208,7 @@ class TestRankingAndFilters:
         resp = client.get(SEARCH_URL, params={"q": "docker"})
         body = resp.json()
         assert body["query"] == "docker"
-        assert body["total"] == len(body["results"])
+        assert body["total"] >= len(body["results"])
         hit = body["results"][0]
         assert isinstance(hit["score"], (int, float))
         assert hit["score"] > 0
@@ -210,3 +217,52 @@ class TestRankingAndFilters:
             field in {"title", "tags", "description", "author"}
             for field in hit["matched_fields"]
         )
+
+
+class TestSearchPagination:
+    def test_default_pagination_metadata(self, client: TestClient, seeded_content: None) -> None:
+        resp = client.get(SEARCH_URL, params={"q": "alice"})
+        body = resp.json()
+        assert body["limit"] == 20
+        assert body["offset"] == 0
+        assert body["has_more"] is False
+        assert body["total"] == 2
+        assert len(body["results"]) == 2
+
+    def test_total_means_total_matches_not_page_size(
+        self, client: TestClient, seeded_content: None,
+    ) -> None:
+        # "alice" matches 2 items; limit=1 must still report total=2 and has_more=True.
+        resp = client.get(SEARCH_URL, params={"q": "alice", "limit": 1})
+        body = resp.json()
+        assert body["total"] == 2
+        assert body["limit"] == 1
+        assert body["offset"] == 0
+        assert body["has_more"] is True
+        assert len(body["results"]) == 1
+
+    def test_offset_skips_results(self, client: TestClient, seeded_content: None) -> None:
+        first_page = client.get(SEARCH_URL, params={"q": "alice", "limit": 1, "offset": 0}).json()
+        second_page = client.get(SEARCH_URL, params={"q": "alice", "limit": 1, "offset": 1}).json()
+        assert first_page["total"] == 2
+        assert second_page["total"] == 2
+        assert second_page["offset"] == 1
+        assert second_page["has_more"] is False
+        assert first_page["results"][0]["slug"] != second_page["results"][0]["slug"]
+
+    def test_offset_past_end_returns_empty_page(
+        self, client: TestClient, seeded_content: None,
+    ) -> None:
+        resp = client.get(SEARCH_URL, params={"q": "alice", "offset": 999}).json()
+        assert resp["total"] == 2
+        assert resp["results"] == []
+        assert resp["has_more"] is False
+
+    def test_invalid_offset_is_422(self, client: TestClient, seeded_content: None) -> None:
+        resp = client.get(SEARCH_URL, params={"q": "docker", "offset": -1})
+        assert resp.status_code == 422
+
+    def test_cache_control_header(self, client: TestClient, seeded_content: None) -> None:
+        resp = client.get(SEARCH_URL, params={"q": "docker"})
+        assert resp.status_code == 200
+        assert resp.headers.get("cache-control") == "public, max-age=60"

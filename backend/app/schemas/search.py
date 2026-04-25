@@ -15,4 +15,7 @@ class SearchResult(ContentSummaryRead):
 class SearchResponse(BaseModel):
     query: str
     total: int
+    limit: int
+    offset: int
+    has_more: bool
     results: list[SearchResult]

@@ -194,3 +194,86 @@ class TestContentDetail:
         # Detail adds body_markdown; feed never includes it.
         assert "body_markdown" in detail_item
         assert "body_markdown" not in feed_item
+
+
+@pytest.fixture()
+def published_lab(db_session: Session) -> Lab:
+    lab = Lab(
+        slug="syndication-lab",
+        title="Syndication Lab",
+        description="A published lab for syndication tests.",
+        body_markdown="# Lab",
+        difficulty="intermediate",
+        estimated_minutes=45,
+        tags=["fastapi"],
+        status="published",
+        author="Test Author",
+        content_type="lab",
+    )
+    db_session.add(lab)
+    db_session.flush()
+    return lab
+
+
+class TestFeedPagination:
+    def test_default_pagination_metadata(self, client, published_course):
+        meta = client.get(FEED_URL).json()["meta"]
+        assert meta["total"] == 1
+        assert meta["limit"] == 50
+        assert meta["offset"] == 0
+        assert meta["has_more"] is False
+
+    def test_empty_feed_pagination_metadata(self, client):
+        meta = client.get(FEED_URL).json()["meta"]
+        assert meta["total"] == 0
+        assert meta["limit"] == 50
+        assert meta["offset"] == 0
+        assert meta["has_more"] is False
+
+    def test_limit_caps_returned_items_total_unchanged(
+        self, client, published_course, published_tutorial, published_lab,
+    ):
+        body = client.get(FEED_URL, params={"limit": 2}).json()
+        assert body["meta"]["total"] == 3
+        assert body["meta"]["limit"] == 2
+        assert body["meta"]["has_more"] is True
+        assert len(body["items"]) == 2
+
+    def test_offset_skips_items(
+        self, client, published_course, published_tutorial, published_lab,
+    ):
+        first = client.get(FEED_URL, params={"limit": 2, "offset": 0}).json()
+        second = client.get(FEED_URL, params={"limit": 2, "offset": 2}).json()
+        assert first["meta"]["has_more"] is True
+        assert second["meta"]["total"] == 3
+        assert second["meta"]["offset"] == 2
+        assert second["meta"]["has_more"] is False
+        assert len(second["items"]) == 1
+        first_slugs = {item["slug"] for item in first["items"]}
+        second_slugs = {item["slug"] for item in second["items"]}
+        assert first_slugs.isdisjoint(second_slugs)
+
+    def test_offset_past_end_returns_empty_page(self, client, published_course):
+        body = client.get(FEED_URL, params={"offset": 999}).json()
+        assert body["meta"]["total"] == 1
+        assert body["items"] == []
+        assert body["meta"]["has_more"] is False
+
+    def test_limit_zero_is_422(self, client):
+        assert client.get(FEED_URL, params={"limit": 0}).status_code == 422
+
+    def test_limit_above_max_is_422(self, client):
+        assert client.get(FEED_URL, params={"limit": 101}).status_code == 422
+
+    def test_negative_offset_is_422(self, client):
+        assert client.get(FEED_URL, params={"offset": -1}).status_code == 422
+
+
+class TestCacheControlHeaders:
+    def test_feed_cache_control(self, client, published_course):
+        resp = client.get(FEED_URL)
+        assert resp.headers.get("cache-control") == "public, max-age=60"
+
+    def test_detail_cache_control(self, client, published_course):
+        resp = client.get(f"{CONTENT_URL}/course/syndication-course")
+        assert resp.headers.get("cache-control") == "public, max-age=300"

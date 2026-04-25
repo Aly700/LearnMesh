@@ -27,8 +27,11 @@ class FeedItem(BaseModel):
 
 
 class FeedMeta(BaseModel):
-    total: int = Field(..., description="Number of items in this response.")
+    total: int = Field(..., description="Total number of items matching this query across all pages.")
     generated_at: datetime = Field(..., description="Server timestamp when the feed was generated.")
+    limit: int = Field(..., description="Maximum number of items returned in this page.")
+    offset: int = Field(..., description="Zero-based index of the first item in this page.")
+    has_more: bool = Field(..., description="True if more items exist beyond this page.")
 
 
 class FeedResponse(BaseModel):

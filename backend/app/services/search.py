@@ -38,17 +38,19 @@ def search_content(
     query: str,
     content_type: ContentKind | None = None,
     limit: int = 20,
-) -> list[SearchResult]:
-    """Return ranked search results across published content.
+    offset: int = 0,
+) -> tuple[list[SearchResult], int]:
+    """Return a page of ranked search results plus the total match count.
 
     Weighted matching over title, tags, description, and author. Does not
     search ``body_markdown``. Only items with ``status = published`` are
-    considered.
+    considered. ``total`` is the count across all pages, not just the
+    returned page.
     """
     normalized_query = query.strip().lower()
     tokens = [token for token in normalized_query.split() if token]
     if not tokens:
-        return []
+        return [], 0
 
     models: list[type[Course] | type[Tutorial] | type[Lab]] = (
         [CONTENT_MODEL_MAP[content_type]] if content_type is not None else [Course, Tutorial, Lab]
@@ -63,15 +65,17 @@ def search_content(
                 scored.append(result)
 
     scored.sort(key=lambda s: (-s.score, s.item.title.lower(), s.item.slug))
+    total = len(scored)
 
-    return [
+    page = [
         SearchResult(
             **serialize_content_summary(s.item).model_dump(),
             score=s.score,
             matched_fields=s.matched_fields,
         )
-        for s in scored[:limit]
+        for s in scored[offset : offset + limit]
     ]
+    return page, total
 
 
 def _score_item(

@@ -188,11 +188,14 @@ def list_published_feed_items(
     db: Session,
     content_type: ContentKind | None = None,
     updated_since: datetime | None = None,
-) -> list[Course | Tutorial | Lab]:
-    """Return published content for the syndication feed.
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[Course | Tutorial | Lab], int]:
+    """Return a page of published content for the syndication feed plus the total match count.
 
     Deterministic ordering: ``updated_at DESC``, then ``slug ASC`` for ties.
-    ``updated_since`` is inclusive (>=).
+    ``updated_since`` is inclusive (>=). ``total`` is the count across all
+    pages, not just the returned page.
     """
     models: list[type[Course] | type[Tutorial] | type[Lab]] = (
         [CONTENT_MODEL_MAP[content_type]] if content_type is not None else [Course, Tutorial, Lab]
@@ -206,7 +209,8 @@ def list_published_feed_items(
         results.extend(db.scalars(statement).all())
 
     results.sort(key=lambda item: (-item.updated_at.timestamp(), item.slug))
-    return results
+    total = len(results)
+    return results[offset : offset + limit], total
 
 
 def get_published_feed_item_or_404(

@@ -101,5 +101,8 @@ export interface SearchResult extends ContentSummary {
 export interface SearchResponse {
   query: string;
   total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
   results: SearchResult[];
 }
