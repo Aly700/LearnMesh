@@ -1,10 +1,12 @@
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { FormEvent, useState } from "react";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../lib/auth";
 
 const navItems = [
   { to: "/", label: "Dashboard", end: true },
   { to: "/explore", label: "Explore" },
+  { to: "/search", label: "Search" },
   { to: "/courses", label: "Courses" },
   { to: "/tutorials", label: "Tutorials" },
   { to: "/labs", label: "Labs" },
@@ -13,6 +15,18 @@ const navItems = [
 
 export const AppShell = () => {
   const { user, loading, logout } = useAuth();
+  const navigate = useNavigate();
+  const [sidebarQuery, setSidebarQuery] = useState("");
+
+  function handleSidebarSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = sidebarQuery.trim();
+    if (trimmed.length < 2) {
+      return;
+    }
+    navigate(`/search?q=${encodeURIComponent(trimmed)}`);
+    setSidebarQuery("");
+  }
 
   return (
     <div className="app-shell">
@@ -22,6 +36,23 @@ export const AppShell = () => {
           <h1>LearnMesh</h1>
           <p>Developer education, structured like a modern product catalog.</p>
         </div>
+
+        <form
+          className="sidebar-search"
+          onSubmit={handleSidebarSearch}
+          role="search"
+        >
+          <input
+            type="search"
+            className="sidebar-search-input"
+            placeholder="Search catalog..."
+            value={sidebarQuery}
+            onChange={(event) => setSidebarQuery(event.target.value)}
+            minLength={2}
+            maxLength={200}
+            aria-label="Search the catalog"
+          />
+        </form>
 
         <nav className="nav-list" aria-label="Primary">
           {navItems.map((item) => (

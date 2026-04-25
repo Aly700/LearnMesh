@@ -8,6 +8,7 @@ import {
   ProgressListItem,
   ProgressUpsertPayload,
   ResourceKind,
+  SearchResponse,
   Status,
   TokenResponse,
   User,
@@ -174,4 +175,19 @@ export function fetchMyProgressList(): Promise<ProgressListItem[]> {
 
 export function fetchMyProgressIndex(): Promise<ContentProgress[]> {
   return fetchJson<ContentProgress[]>("/me/progress/index");
+}
+
+export function searchContent(
+  query: string,
+  contentType?: ContentType,
+  limit?: number,
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({ q: query });
+  if (contentType) {
+    params.set("content_type", contentType);
+  }
+  if (limit !== undefined) {
+    params.set("limit", String(limit));
+  }
+  return fetchJson<SearchResponse>(`/search?${params.toString()}`);
 }

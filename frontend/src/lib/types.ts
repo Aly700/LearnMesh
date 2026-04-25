@@ -90,3 +90,16 @@ export interface ProgressListItem {
   updated_at: string;
   content: ContentSummary;
 }
+
+export type SearchMatchedField = "title" | "tags" | "description" | "author";
+
+export interface SearchResult extends ContentSummary {
+  score: number;
+  matched_fields: SearchMatchedField[];
+}
+
+export interface SearchResponse {
+  query: string;
+  total: number;
+  results: SearchResult[];
+}

@@ -9,6 +9,7 @@ import { LearningPathDetailPage } from "./pages/LearningPathDetailPage";
 import { LearningPathsPage } from "./pages/LearningPathsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
+import { SearchPage } from "./pages/SearchPage";
 
 const App = () => {
   return (
@@ -55,6 +56,7 @@ const App = () => {
           }
         />
         <Route path="/labs/:slug" element={<ContentDetailPage resource="labs" />} />
+        <Route path="/search" element={<SearchPage />} />
         <Route path="/learning-paths" element={<LearningPathsPage />} />
         <Route
           path="/learning-paths/:slug"
