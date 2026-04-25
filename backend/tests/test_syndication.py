@@ -1,12 +1,16 @@
 """Tests for the content syndication feed endpoint."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy.orm import Session
 
 from app.models.content import Course, Lab, Tutorial
+from app.models.learning_path import LearningPath, LearningPathItem
 
 FEED_URL = "/api/v1/syndication/feed"
 CONTENT_URL = "/api/v1/syndication/content"
+PATH_URL = "/api/v1/syndication/learning-paths"
 
 
 @pytest.fixture()
@@ -384,6 +388,276 @@ class TestDetailConditionalGet:
 
     def test_404_does_not_set_validators(self, client):
         resp = client.get(f"{CONTENT_URL}/course/nonexistent-slug")
+        assert resp.status_code == 404
+        assert resp.headers.get("etag") is None
+        assert resp.headers.get("last-modified") is None
+
+
+def _make_published(db_session, model, *, slug, title, minutes=30, content_type, status_value="published"):
+    item = model(
+        slug=slug,
+        title=title,
+        description=f"{title} description.",
+        body_markdown=f"# {title}",
+        difficulty="beginner",
+        estimated_minutes=minutes,
+        tags=[],
+        status=status_value,
+        author="Path Author",
+        content_type=content_type,
+    )
+    db_session.add(item)
+    db_session.flush()
+    return item
+
+
+@pytest.fixture()
+def path_course(db_session: Session) -> Course:
+    return _make_published(db_session, Course, slug="path-course-a", title="Path Course A",
+                           minutes=30, content_type="course")
+
+
+@pytest.fixture()
+def path_tutorial(db_session: Session) -> Tutorial:
+    return _make_published(db_session, Tutorial, slug="path-tutorial-b", title="Path Tutorial B",
+                           minutes=15, content_type="tutorial")
+
+
+@pytest.fixture()
+def path_lab_draft(db_session: Session) -> Lab:
+    return _make_published(db_session, Lab, slug="path-lab-draft", title="Draft Lab",
+                           minutes=60, content_type="lab", status_value="draft")
+
+
+def _make_path(db_session, *, slug, title, member_specs):
+    """member_specs: iterable of (position, content_row[, override_content_id])."""
+    path = LearningPath(slug=slug, title=title, description=f"{title} description.")
+    db_session.add(path)
+    db_session.flush()
+    for spec in member_specs:
+        position = spec[0]
+        content_row = spec[1]
+        content_id = spec[2] if len(spec) > 2 else content_row.id
+        path.items.append(
+            LearningPathItem(
+                position=position,
+                content_type=content_row.content_type,
+                content_id=content_id,
+                content_slug=content_row.slug,
+                content_title=content_row.title,
+            )
+        )
+    db_session.flush()
+    return path
+
+
+class TestLearningPathDetail:
+    def test_returns_200_for_published_path(self, client, db_session, path_course, path_tutorial):
+        path = _make_path(
+            db_session,
+            slug="full-stack",
+            title="Full Stack",
+            member_specs=[(1, path_course), (2, path_tutorial)],
+        )
+        resp = client.get(f"{PATH_URL}/{path.slug}")
+        assert resp.status_code == 200
+
+    def test_response_shape(self, client, db_session, path_course, path_tutorial):
+        path = _make_path(
+            db_session,
+            slug="full-stack-shape",
+            title="Full Stack Shape",
+            member_specs=[(1, path_course), (2, path_tutorial)],
+        )
+        body = client.get(f"{PATH_URL}/{path.slug}").json()
+        assert body["slug"] == "full-stack-shape"
+        assert body["title"] == "Full Stack Shape"
+        assert "description" in body
+        assert body["step_count"] == 2
+        assert body["estimated_minutes_total"] == 45  # 30 + 15
+        assert "created_at" in body and "updated_at" in body
+        assert isinstance(body["steps"], list)
+        assert len(body["steps"]) == 2
+
+    def test_steps_have_only_public_fields(self, client, db_session, path_course):
+        path = _make_path(
+            db_session, slug="one-step", title="One Step",
+            member_specs=[(1, path_course)],
+        )
+        step = client.get(f"{PATH_URL}/{path.slug}").json()["steps"][0]
+        assert set(step.keys()) == {"position", "content_type", "slug", "title"}
+        assert step["position"] == 1
+        assert step["content_type"] == "course"
+        assert step["slug"] == "path-course-a"
+        assert step["title"] == "Path Course A"
+
+    def test_step_count_and_total_match_filtered_steps(
+        self, client, db_session, path_course, path_tutorial, path_lab_draft,
+    ):
+        path = _make_path(
+            db_session, slug="mixed-status", title="Mixed Status",
+            member_specs=[(1, path_course), (2, path_lab_draft), (3, path_tutorial)],
+        )
+        body = client.get(f"{PATH_URL}/{path.slug}").json()
+        assert body["step_count"] == 2
+        assert body["estimated_minutes_total"] == 45  # course 30 + tutorial 15, draft excluded
+        assert len(body["steps"]) == 2
+
+    def test_unknown_slug_returns_404(self, client):
+        resp = client.get(f"{PATH_URL}/does-not-exist")
+        assert resp.status_code == 404
+
+    def test_path_with_only_draft_steps_returns_404(
+        self, client, db_session, path_lab_draft,
+    ):
+        path = _make_path(
+            db_session, slug="all-draft", title="All Draft",
+            member_specs=[(1, path_lab_draft)],
+        )
+        resp = client.get(f"{PATH_URL}/{path.slug}")
+        assert resp.status_code == 404
+
+    def test_position_gaps_preserved(
+        self, client, db_session, path_course, path_tutorial, path_lab_draft,
+    ):
+        path = _make_path(
+            db_session, slug="gappy", title="Gappy",
+            member_specs=[(1, path_course), (2, path_lab_draft), (3, path_tutorial)],
+        )
+        steps = client.get(f"{PATH_URL}/{path.slug}").json()["steps"]
+        positions = [s["position"] for s in steps]
+        assert positions == [1, 3]
+
+    def test_orphaned_step_filtered_alongside_drafts(
+        self, client, db_session, path_course,
+    ):
+        # Step 2 references a content_id that doesn't exist.
+        path = _make_path(
+            db_session, slug="with-orphan", title="With Orphan",
+            member_specs=[(1, path_course), (2, path_course, 999_999)],
+        )
+        body = client.get(f"{PATH_URL}/{path.slug}").json()
+        assert body["step_count"] == 1
+        assert [s["position"] for s in body["steps"]] == [1]
+
+    def test_path_with_only_orphaned_steps_returns_404(self, client, db_session, path_course):
+        path = _make_path(
+            db_session, slug="all-orphans", title="All Orphans",
+            member_specs=[(1, path_course, 999_999), (2, path_course, 999_998)],
+        )
+        resp = client.get(f"{PATH_URL}/{path.slug}")
+        assert resp.status_code == 404
+
+    def test_no_auth_required(self, client, db_session, path_course):
+        path = _make_path(
+            db_session, slug="no-auth", title="No Auth",
+            member_specs=[(1, path_course)],
+        )
+        with_auth = client.get(f"{PATH_URL}/{path.slug}", headers={"Authorization": "Bearer x"})
+        without = client.get(f"{PATH_URL}/{path.slug}")
+        assert with_auth.status_code == 200
+        assert without.status_code == 200
+        assert with_auth.json() == without.json()
+
+    def test_internal_crud_endpoint_unchanged(
+        self, client, db_session, path_course, path_lab_draft,
+    ):
+        # Internal endpoint must still expose unfiltered, internal-shape data.
+        path = _make_path(
+            db_session, slug="internal-shape", title="Internal Shape",
+            member_specs=[(1, path_course), (2, path_lab_draft)],
+        )
+        resp = client.get(f"/api/v1/learning-paths/slug/{path.slug}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["step_count"] == 2  # both members present, including the draft
+        statuses = {step["status"] for step in body["ordered_content"]}
+        assert "draft" in statuses
+
+
+class TestLearningPathConditionalGet:
+    def test_etag_last_modified_and_cache_control_present(
+        self, client, db_session, path_course,
+    ):
+        path = _make_path(
+            db_session, slug="cond-headers", title="Cond Headers",
+            member_specs=[(1, path_course)],
+        )
+        resp = client.get(f"{PATH_URL}/{path.slug}")
+        assert resp.headers.get("etag") is not None
+        assert resp.headers.get("last-modified") is not None
+        assert resp.headers.get("cache-control") == "public, max-age=300"
+
+    def test_etag_stable_across_requests(self, client, db_session, path_course):
+        path = _make_path(
+            db_session, slug="cond-stable", title="Cond Stable",
+            member_specs=[(1, path_course)],
+        )
+        first = client.get(f"{PATH_URL}/{path.slug}").headers["etag"]
+        second = client.get(f"{PATH_URL}/{path.slug}").headers["etag"]
+        assert first == second
+
+    def test_if_none_match_returns_304(self, client, db_session, path_course):
+        path = _make_path(
+            db_session, slug="cond-inm", title="Cond INM",
+            member_specs=[(1, path_course)],
+        )
+        first = client.get(f"{PATH_URL}/{path.slug}")
+        etag = first.headers["etag"]
+        resp = client.get(f"{PATH_URL}/{path.slug}", headers={"If-None-Match": etag})
+        assert resp.status_code == 304
+        assert resp.content == b""
+        assert resp.headers.get("etag") == etag
+        assert resp.headers.get("last-modified") == first.headers["last-modified"]
+        assert resp.headers.get("cache-control") == "public, max-age=300"
+
+    def test_if_modified_since_future_returns_304_past_returns_200(
+        self, client, db_session, path_course,
+    ):
+        path = _make_path(
+            db_session, slug="cond-ims", title="Cond IMS",
+            member_specs=[(1, path_course)],
+        )
+        future = client.get(
+            f"{PATH_URL}/{path.slug}",
+            headers={"If-Modified-Since": "Wed, 01 Jan 2099 00:00:00 GMT"},
+        )
+        past = client.get(
+            f"{PATH_URL}/{path.slug}",
+            headers={"If-Modified-Since": "Sun, 01 Jan 2000 00:00:00 GMT"},
+        )
+        assert future.status_code == 304
+        assert past.status_code == 200
+
+    def test_last_modified_reflects_max_of_path_and_members(
+        self, client, db_session, path_course,
+    ):
+        # Bump the member's updated_at well past the path's.
+        future = datetime.now(UTC) + timedelta(days=30)
+        path_course.updated_at = future
+        db_session.flush()
+
+        path = _make_path(
+            db_session, slug="cond-max", title="Cond Max",
+            member_specs=[(1, path_course)],
+        )
+        # Force the path's updated_at to be earlier than the member's.
+        path.updated_at = datetime.now(UTC) - timedelta(days=1)
+        db_session.flush()
+
+        resp = client.get(f"{PATH_URL}/{path.slug}")
+        # Member's future timestamp (past today) means If-Modified-Since=today → 200.
+        # If Last-Modified ignored the member, IMS=today would return 304.
+        today_header = "Sat, 25 Apr 2026 04:00:00 GMT"
+        replay = client.get(
+            f"{PATH_URL}/{path.slug}",
+            headers={"If-Modified-Since": today_header},
+        )
+        assert resp.status_code == 200
+        assert replay.status_code == 200  # member's future updated_at wins → not modified-since today
+
+    def test_404_does_not_set_validators(self, client):
+        resp = client.get(f"{PATH_URL}/no-such-path")
         assert resp.status_code == 404
         assert resp.headers.get("etag") is None
         assert resp.headers.get("last-modified") is None

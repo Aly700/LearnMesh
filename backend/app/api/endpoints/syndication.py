@@ -7,13 +7,25 @@ from sqlalchemy.orm import Session
 from app.api._conditional import compute_etag, not_modified
 from app.api.dependencies import get_db
 from app.models.content import ContentKind
-from app.schemas.syndication import FeedItem, FeedItemDetail, FeedMeta, FeedResponse
+from app.schemas.syndication import (
+    FeedItem,
+    FeedItemDetail,
+    FeedMeta,
+    FeedResponse,
+    LearningPathFeedDetail,
+)
 from app.services.content import get_published_feed_item_or_404, list_published_feed_items
+from app.services.learning_paths import (
+    get_published_learning_path_or_404,
+    published_learning_path_last_modified,
+    serialize_published_learning_path,
+)
 
 router = APIRouter(prefix="/syndication", tags=["Syndication"])
 
 FEED_CACHE_CONTROL = "public, max-age=60"
 DETAIL_CACHE_CONTROL = "public, max-age=300"
+LEARNING_PATH_CACHE_CONTROL = "public, max-age=300"
 
 
 @router.get(
@@ -113,4 +125,48 @@ def get_content_detail(
     response.headers["ETag"] = etag
     response.headers["Last-Modified"] = last_modified_header
     response.headers["Cache-Control"] = DETAIL_CACHE_CONTROL
+    return payload
+
+
+@router.get(
+    "/learning-paths/{slug}",
+    response_model=LearningPathFeedDetail,
+    summary="Public learning-path syndication detail",
+    description=(
+        "Returns one publicly-syndicated learning path by `slug`. A path is exposed "
+        "iff at least one of its ordered steps resolves to `status = published` "
+        "content; unpublished and orphaned steps are filtered out, and original "
+        "`position` values are preserved (gaps are intentional). Internal "
+        "learning-path CRUD endpoints are unaffected. Supports `If-None-Match` "
+        "and `If-Modified-Since`; returns 304 when fresh."
+    ),
+)
+def get_learning_path_detail(
+    request: Request,
+    response: Response,
+    slug: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    learning_path, published_pairs = get_published_learning_path_or_404(db, slug)
+    payload = serialize_published_learning_path(learning_path, published_pairs)
+
+    etag = compute_etag(payload.model_dump(mode="json"))
+    last_modified = published_learning_path_last_modified(learning_path, published_pairs)
+    if last_modified.tzinfo is None:
+        last_modified = last_modified.replace(tzinfo=UTC)
+    last_modified_header = format_datetime(last_modified, usegmt=True)
+
+    if not_modified(request, etag, last_modified=last_modified):
+        return Response(
+            status_code=304,
+            headers={
+                "ETag": etag,
+                "Last-Modified": last_modified_header,
+                "Cache-Control": LEARNING_PATH_CACHE_CONTROL,
+            },
+        )
+
+    response.headers["ETag"] = etag
+    response.headers["Last-Modified"] = last_modified_header
+    response.headers["Cache-Control"] = LEARNING_PATH_CACHE_CONTROL
     return payload

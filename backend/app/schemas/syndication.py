@@ -47,3 +47,38 @@ class FeedItemDetail(FeedItem):
     """
 
     body_markdown: str
+
+
+class LearningPathFeedStep(BaseModel):
+    """A single ordered step within a syndicated learning path.
+
+    Reference-only: partners follow up via ``/syndication/content/{content_type}/{slug}``
+    for full per-step detail.
+    """
+
+    position: int
+    content_type: ContentKind
+    slug: str
+    title: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LearningPathFeedDetail(BaseModel):
+    """Public syndication payload for one published learning path.
+
+    A learning path is exposed iff it has at least one step whose underlying
+    content is ``status = published``. Unpublished or orphaned steps are filtered
+    out; original ``position`` values are preserved (gaps are intentional).
+    """
+
+    slug: str
+    title: str
+    description: str
+    step_count: int = Field(..., description="Number of published steps after filtering.")
+    estimated_minutes_total: int = Field(..., description="Sum of estimated minutes across published steps.")
+    created_at: datetime
+    updated_at: datetime
+    steps: list[LearningPathFeedStep]
+
+    model_config = ConfigDict(from_attributes=True)

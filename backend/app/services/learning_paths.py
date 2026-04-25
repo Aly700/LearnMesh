@@ -1,9 +1,11 @@
+from datetime import datetime
+
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.content import ContentKind
+from app.models.content import ContentKind, Course, Lab, PublicationStatus, Tutorial
 from app.models.learning_path import LearningPath, LearningPathItem
 from app.schemas.learning_path import (
     LearningPathContentReferenceCreate,
@@ -12,7 +14,12 @@ from app.schemas.learning_path import (
     LearningPathRead,
     LearningPathUpdate,
 )
-from app.services.content import resolve_content_reference, serialize_content_summary
+from app.schemas.syndication import LearningPathFeedDetail, LearningPathFeedStep
+from app.services.content import (
+    CONTENT_MODEL_MAP,
+    resolve_content_reference,
+    serialize_content_summary,
+)
 
 
 def list_learning_paths(db: Session) -> list[LearningPathRead]:
@@ -156,6 +163,91 @@ def serialize_learning_path(
         created_at=learning_path.created_at,
         updated_at=learning_path.updated_at,
         ordered_content=ordered_content,
+    )
+
+
+def get_published_learning_path_or_404(
+    db: Session,
+    slug: str,
+) -> tuple[LearningPath, list[tuple[LearningPathItem, Course | Tutorial | Lab]]]:
+    """Return a learning path by slug along with its published step pairs.
+
+    A learning path is "published" iff at least one of its ordered steps
+    resolves to a content row with ``status = published``. Unpublished and
+    orphaned (missing) steps are filtered out. Returns ``(path, pairs)`` where
+    ``pairs`` is ``[(item, content_row), ...]`` in original ``position`` order
+    (gaps preserved). Raises 404 if the path does not exist or no steps
+    survive filtering.
+    """
+    statement = (
+        select(LearningPath)
+        .options(selectinload(LearningPath.items))
+        .where(LearningPath.slug == slug)
+    )
+    learning_path = db.scalar(statement)
+    if learning_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Published learning path with slug '{slug}' was not found.",
+        )
+
+    pairs: list[tuple[LearningPathItem, Course | Tutorial | Lab]] = []
+    for item in learning_path.items:
+        try:
+            kind = ContentKind(item.content_type)
+        except ValueError:
+            continue
+        model = CONTENT_MODEL_MAP[kind]
+        content_row = db.get(model, item.content_id)
+        if content_row is None:
+            continue
+        if content_row.status != PublicationStatus.published.value:
+            continue
+        pairs.append((item, content_row))
+
+    if not pairs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Published learning path with slug '{slug}' was not found.",
+        )
+
+    return learning_path, pairs
+
+
+def serialize_published_learning_path(
+    learning_path: LearningPath,
+    published_pairs: list[tuple[LearningPathItem, Course | Tutorial | Lab]],
+) -> LearningPathFeedDetail:
+    """Build the public syndication payload for a published learning path."""
+    steps = [
+        LearningPathFeedStep(
+            position=item.position,
+            content_type=ContentKind(content_row.content_type),
+            slug=content_row.slug,
+            title=content_row.title,
+        )
+        for item, content_row in published_pairs
+    ]
+    return LearningPathFeedDetail(
+        slug=learning_path.slug,
+        title=learning_path.title,
+        description=learning_path.description,
+        step_count=len(steps),
+        estimated_minutes_total=sum(content_row.estimated_minutes for _, content_row in published_pairs),
+        created_at=learning_path.created_at,
+        updated_at=learning_path.updated_at,
+        steps=steps,
+    )
+
+
+def published_learning_path_last_modified(
+    learning_path: LearningPath,
+    published_pairs: list[tuple[LearningPathItem, Course | Tutorial | Lab]],
+) -> datetime:
+    """Return ``MAX(path.updated_at, max(member.updated_at))`` over published members."""
+    return max(
+        learning_path.updated_at,
+        *(content_row.updated_at for _, content_row in published_pairs),
     )
 
 
