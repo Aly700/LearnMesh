@@ -47,6 +47,10 @@ export const LearningPathDetailPage = () => {
     };
   }, [slug]);
 
+  const { user } = useAuth();
+  const { completed, total } = usePathProgress(path?.ordered_content ?? []);
+  const { statusFor } = useProgressIndex();
+
   if (error) {
     return (
       <section className="surface page-section">
@@ -59,10 +63,6 @@ export const LearningPathDetailPage = () => {
       </section>
     );
   }
-
-  const { user } = useAuth();
-  const { completed, total } = usePathProgress(path?.ordered_content ?? []);
-  const { statusFor } = useProgressIndex();
 
   if (loading || !path) {
     return (

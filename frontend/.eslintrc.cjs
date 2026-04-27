@@ -19,11 +19,6 @@ module.exports = {
     "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     "react-hooks/exhaustive-deps": "warn",
     "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
-    // Demoted to "warn" for the Phase 4H foundation slice so existing pre-foundation issues
-    // are tracked but don't block. Both should be re-promoted to "error" once the underlying
-    // sites are fixed in a follow-up component slice.
-    "react-hooks/rules-of-hooks": "warn",
-    "react/no-unescaped-entities": "warn",
   },
   overrides: [
     {
