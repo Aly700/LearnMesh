@@ -14,7 +14,11 @@ from app.schemas.learning_path import (
     LearningPathRead,
     LearningPathUpdate,
 )
-from app.schemas.syndication import LearningPathFeedDetail, LearningPathFeedStep
+from app.schemas.syndication import (
+    LearningPathFeedDetail,
+    LearningPathFeedStep,
+    LearningPathFeedSummary,
+)
 from app.services.content import (
     CONTENT_MODEL_MAP,
     resolve_content_reference,
@@ -166,6 +170,33 @@ def serialize_learning_path(
     )
 
 
+def _publishable_pairs(
+    db: Session,
+    learning_path: LearningPath,
+) -> list[tuple[LearningPathItem, Course | Tutorial | Lab]]:
+    """Return the ordered ``(item, content_row)`` pairs for a path's published steps.
+
+    Filters out steps whose ``content_type`` is unknown, whose content row is
+    missing (orphaned), or whose content row is not ``status = published``.
+    Original ``position`` order is preserved (gaps intentional). Returns ``[]``
+    when no step survives filtering.
+    """
+    pairs: list[tuple[LearningPathItem, Course | Tutorial | Lab]] = []
+    for item in learning_path.items:
+        try:
+            kind = ContentKind(item.content_type)
+        except ValueError:
+            continue
+        model = CONTENT_MODEL_MAP[kind]
+        content_row = db.get(model, item.content_id)
+        if content_row is None:
+            continue
+        if content_row.status != PublicationStatus.published.value:
+            continue
+        pairs.append((item, content_row))
+    return pairs
+
+
 def get_published_learning_path_or_404(
     db: Session,
     slug: str,
@@ -191,20 +222,7 @@ def get_published_learning_path_or_404(
             detail=f"Published learning path with slug '{slug}' was not found.",
         )
 
-    pairs: list[tuple[LearningPathItem, Course | Tutorial | Lab]] = []
-    for item in learning_path.items:
-        try:
-            kind = ContentKind(item.content_type)
-        except ValueError:
-            continue
-        model = CONTENT_MODEL_MAP[kind]
-        content_row = db.get(model, item.content_id)
-        if content_row is None:
-            continue
-        if content_row.status != PublicationStatus.published.value:
-            continue
-        pairs.append((item, content_row))
-
+    pairs = _publishable_pairs(db, learning_path)
     if not pairs:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -212,6 +230,50 @@ def get_published_learning_path_or_404(
         )
 
     return learning_path, pairs
+
+
+def list_publishable_learning_paths(
+    db: Session,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[LearningPathFeedSummary], int]:
+    """Return a page of publishable learning-path summaries plus the total match count.
+
+    A path is included iff it has at least one step that resolves to a
+    ``status = published`` content row (same gate as Phase 4F). Deterministic
+    ordering: ``updated_at DESC``, tie-break on ``slug ASC``. ``total`` counts
+    all publishable paths across pages.
+    """
+    statement = (
+        select(LearningPath)
+        .options(selectinload(LearningPath.items))
+        .order_by(LearningPath.updated_at.desc(), LearningPath.slug.asc())
+    )
+    publishable: list[LearningPathFeedSummary] = []
+    for path in db.scalars(statement).all():
+        pairs = _publishable_pairs(db, path)
+        if not pairs:
+            continue
+        publishable.append(serialize_publishable_learning_path_summary(path, pairs))
+
+    total = len(publishable)
+    return publishable[offset : offset + limit], total
+
+
+def serialize_publishable_learning_path_summary(
+    learning_path: LearningPath,
+    published_pairs: list[tuple[LearningPathItem, Course | Tutorial | Lab]],
+) -> LearningPathFeedSummary:
+    """Build the slim feed summary for a publishable learning path."""
+    return LearningPathFeedSummary(
+        slug=learning_path.slug,
+        title=learning_path.title,
+        description=learning_path.description,
+        step_count=len(published_pairs),
+        estimated_minutes_total=sum(content_row.estimated_minutes for _, content_row in published_pairs),
+        created_at=learning_path.created_at,
+        updated_at=learning_path.updated_at,
+    )
 
 
 def serialize_published_learning_path(

@@ -11,6 +11,7 @@ from app.models.learning_path import LearningPath, LearningPathItem
 FEED_URL = "/api/v1/syndication/feed"
 CONTENT_URL = "/api/v1/syndication/content"
 PATH_URL = "/api/v1/syndication/learning-paths"
+PATH_FEED_URL = "/api/v1/syndication/learning-paths"
 
 
 @pytest.fixture()
@@ -661,3 +662,176 @@ class TestLearningPathConditionalGet:
         assert resp.status_code == 404
         assert resp.headers.get("etag") is None
         assert resp.headers.get("last-modified") is None
+
+
+class TestLearningPathFeedBasics:
+    def test_empty_feed(self, client):
+        body = client.get(PATH_FEED_URL).json()
+        assert body["meta"]["total"] == 0
+        assert body["meta"]["limit"] == 50
+        assert body["meta"]["offset"] == 0
+        assert body["meta"]["has_more"] is False
+        assert "generated_at" in body["meta"]
+        assert body["items"] == []
+
+    def test_one_publishable_path_returned(self, client, db_session, path_course):
+        path = _make_path(
+            db_session, slug="feed-one", title="Feed One",
+            member_specs=[(1, path_course)],
+        )
+        body = client.get(PATH_FEED_URL).json()
+        assert body["meta"]["total"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["slug"] == path.slug
+
+    def test_item_shape_is_slim(self, client, db_session, path_course, path_tutorial):
+        _make_path(
+            db_session, slug="feed-shape", title="Feed Shape",
+            member_specs=[(1, path_course), (2, path_tutorial)],
+        )
+        item = client.get(PATH_FEED_URL).json()["items"][0]
+        assert set(item.keys()) == {
+            "slug", "title", "description",
+            "step_count", "estimated_minutes_total",
+            "created_at", "updated_at",
+        }
+        assert "steps" not in item
+
+    def test_step_count_and_total_reflect_filtered_steps(
+        self, client, db_session, path_course, path_tutorial, path_lab_draft,
+    ):
+        _make_path(
+            db_session, slug="feed-filtered", title="Feed Filtered",
+            member_specs=[(1, path_course), (2, path_lab_draft), (3, path_tutorial)],
+        )
+        item = client.get(PATH_FEED_URL).json()["items"][0]
+        assert item["step_count"] == 2  # draft excluded
+        assert item["estimated_minutes_total"] == 45  # 30 + 15
+
+    def test_all_draft_path_excluded(self, client, db_session, path_lab_draft):
+        _make_path(
+            db_session, slug="feed-all-draft", title="Feed All Draft",
+            member_specs=[(1, path_lab_draft)],
+        )
+        body = client.get(PATH_FEED_URL).json()
+        assert body["meta"]["total"] == 0
+        assert body["items"] == []
+
+    def test_all_orphans_path_excluded(self, client, db_session, path_course):
+        _make_path(
+            db_session, slug="feed-all-orphans", title="Feed All Orphans",
+            member_specs=[(1, path_course, 999_999), (2, path_course, 999_998)],
+        )
+        body = client.get(PATH_FEED_URL).json()
+        assert body["meta"]["total"] == 0
+
+    def test_mixed_publishable_and_excluded(
+        self, client, db_session, path_course, path_tutorial, path_lab_draft,
+    ):
+        _make_path(db_session, slug="ok-a", title="OK A", member_specs=[(1, path_course)])
+        _make_path(db_session, slug="ok-b", title="OK B", member_specs=[(1, path_tutorial)])
+        _make_path(db_session, slug="all-draft", title="All Draft",
+                   member_specs=[(1, path_lab_draft)])
+        body = client.get(PATH_FEED_URL).json()
+        assert body["meta"]["total"] == 2
+        slugs = {item["slug"] for item in body["items"]}
+        assert slugs == {"ok-a", "ok-b"}
+
+    def test_no_auth_required(self, client, db_session, path_course):
+        _make_path(db_session, slug="feed-noauth", title="Feed NoAuth",
+                   member_specs=[(1, path_course)])
+        with_auth = client.get(PATH_FEED_URL, headers={"Authorization": "Bearer x"})
+        without = client.get(PATH_FEED_URL)
+        assert with_auth.status_code == 200
+        assert without.status_code == 200
+        assert with_auth.json()["items"] == without.json()["items"]
+
+
+class TestLearningPathFeedPagination:
+    def test_default_pagination_metadata(self, client, db_session, path_course):
+        _make_path(db_session, slug="page-default", title="Page Default",
+                   member_specs=[(1, path_course)])
+        meta = client.get(PATH_FEED_URL).json()["meta"]
+        assert meta["limit"] == 50
+        assert meta["offset"] == 0
+        assert meta["has_more"] is False
+
+    def test_limit_caps_items_total_unchanged(
+        self, client, db_session, path_course, path_tutorial,
+    ):
+        _make_path(db_session, slug="p-a", title="A", member_specs=[(1, path_course)])
+        _make_path(db_session, slug="p-b", title="B", member_specs=[(1, path_tutorial)])
+        _make_path(db_session, slug="p-c", title="C", member_specs=[(1, path_course)])
+        body = client.get(PATH_FEED_URL, params={"limit": 2}).json()
+        assert body["meta"]["total"] == 3
+        assert body["meta"]["limit"] == 2
+        assert body["meta"]["has_more"] is True
+        assert len(body["items"]) == 2
+
+    def test_offset_skips_items(self, client, db_session, path_course, path_tutorial):
+        _make_path(db_session, slug="p-a2", title="A2", member_specs=[(1, path_course)])
+        _make_path(db_session, slug="p-b2", title="B2", member_specs=[(1, path_tutorial)])
+        _make_path(db_session, slug="p-c2", title="C2", member_specs=[(1, path_course)])
+        body = client.get(PATH_FEED_URL, params={"limit": 2, "offset": 2}).json()
+        assert body["meta"]["total"] == 3
+        assert body["meta"]["offset"] == 2
+        assert body["meta"]["has_more"] is False
+        assert len(body["items"]) == 1
+
+    def test_offset_past_end_returns_empty_page(self, client, db_session, path_course):
+        _make_path(db_session, slug="p-only", title="Only", member_specs=[(1, path_course)])
+        body = client.get(PATH_FEED_URL, params={"offset": 999}).json()
+        assert body["meta"]["total"] == 1
+        assert body["items"] == []
+        assert body["meta"]["has_more"] is False
+
+    def test_validation_errors(self, client):
+        assert client.get(PATH_FEED_URL, params={"limit": 0}).status_code == 422
+        assert client.get(PATH_FEED_URL, params={"limit": 101}).status_code == 422
+        assert client.get(PATH_FEED_URL, params={"offset": -1}).status_code == 422
+
+
+class TestLearningPathFeedConditionalGet:
+    def test_etag_present_no_last_modified(self, client, db_session, path_course):
+        _make_path(db_session, slug="cg-headers", title="CG Headers",
+                   member_specs=[(1, path_course)])
+        resp = client.get(PATH_FEED_URL)
+        assert resp.headers.get("etag") is not None
+        assert resp.headers.get("etag").startswith('"')
+        assert resp.headers.get("cache-control") == "public, max-age=60"
+        assert resp.headers.get("last-modified") is None
+
+    def test_etag_stable_across_requests(self, client, db_session, path_course):
+        _make_path(db_session, slug="cg-stable", title="CG Stable",
+                   member_specs=[(1, path_course)])
+        first = client.get(PATH_FEED_URL).headers["etag"]
+        second = client.get(PATH_FEED_URL).headers["etag"]
+        assert first == second
+
+    def test_etag_changes_when_path_content_changes(
+        self, client, db_session, path_course,
+    ):
+        path = _make_path(db_session, slug="cg-mut", title="CG Mut",
+                          member_specs=[(1, path_course)])
+        first = client.get(PATH_FEED_URL).headers["etag"]
+        path.title = "CG Mut Renamed"
+        db_session.flush()
+        second = client.get(PATH_FEED_URL).headers["etag"]
+        assert first != second
+
+    def test_if_none_match_match_returns_304(self, client, db_session, path_course):
+        _make_path(db_session, slug="cg-inm", title="CG INM",
+                   member_specs=[(1, path_course)])
+        etag = client.get(PATH_FEED_URL).headers["etag"]
+        resp = client.get(PATH_FEED_URL, headers={"If-None-Match": etag})
+        assert resp.status_code == 304
+        assert resp.content == b""
+        assert resp.headers.get("etag") == etag
+        assert resp.headers.get("cache-control") == "public, max-age=60"
+
+    def test_if_none_match_mismatch_returns_200(self, client, db_session, path_course):
+        _make_path(db_session, slug="cg-mismatch", title="CG Mismatch",
+                   member_specs=[(1, path_course)])
+        resp = client.get(PATH_FEED_URL, headers={"If-None-Match": '"deadbeef"'})
+        assert resp.status_code == 200
+        assert resp.json()["meta"]["total"] == 1

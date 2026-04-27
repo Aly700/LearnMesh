@@ -13,10 +13,12 @@ from app.schemas.syndication import (
     FeedMeta,
     FeedResponse,
     LearningPathFeedDetail,
+    LearningPathFeedResponse,
 )
 from app.services.content import get_published_feed_item_or_404, list_published_feed_items
 from app.services.learning_paths import (
     get_published_learning_path_or_404,
+    list_publishable_learning_paths,
     published_learning_path_last_modified,
     serialize_published_learning_path,
 )
@@ -26,6 +28,7 @@ router = APIRouter(prefix="/syndication", tags=["Syndication"])
 FEED_CACHE_CONTROL = "public, max-age=60"
 DETAIL_CACHE_CONTROL = "public, max-age=300"
 LEARNING_PATH_CACHE_CONTROL = "public, max-age=300"
+LEARNING_PATH_FEED_CACHE_CONTROL = "public, max-age=60"
 
 
 @router.get(
@@ -125,6 +128,55 @@ def get_content_detail(
     response.headers["ETag"] = etag
     response.headers["Last-Modified"] = last_modified_header
     response.headers["Cache-Control"] = DETAIL_CACHE_CONTROL
+    return payload
+
+
+@router.get(
+    "/learning-paths",
+    response_model=LearningPathFeedResponse,
+    summary="Public learning-path syndication feed",
+    description=(
+        "Returns a page of publishable learning paths. A path is included iff at "
+        "least one of its ordered steps resolves to `status = published` content "
+        "(same gate as the detail endpoint). Each item is a slim summary "
+        "(`slug`, `title`, `description`, `step_count`, `estimated_minutes_total`, "
+        "`created_at`, `updated_at`); partners follow up via "
+        "`/syndication/learning-paths/{slug}` for the ordered-steps payload. "
+        "`meta.total` counts all publishable paths across pages; `meta.has_more` "
+        "is true when more items exist beyond `offset + limit`. Supports "
+        "`If-None-Match` against the response `ETag`; returns 304 when fresh."
+    ),
+)
+def get_learning_path_feed(
+    request: Request,
+    response: Response,
+    limit: int = Query(default=50, ge=1, le=100, description="Maximum items per page."),
+    offset: int = Query(default=0, ge=0, description="Zero-based index of the first item to return."),
+    db: Session = Depends(get_db),
+) -> Response:
+    items, total = list_publishable_learning_paths(db, limit=limit, offset=offset)
+    payload = LearningPathFeedResponse(
+        meta=FeedMeta(
+            total=total,
+            generated_at=datetime.now(UTC),
+            limit=limit,
+            offset=offset,
+            has_more=(offset + len(items)) < total,
+        ),
+        items=items,
+    )
+
+    etag_source = payload.model_dump(mode="json", exclude={"meta": {"generated_at"}})
+    etag = compute_etag(etag_source)
+
+    if not_modified(request, etag):
+        return Response(
+            status_code=304,
+            headers={"ETag": etag, "Cache-Control": LEARNING_PATH_FEED_CACHE_CONTROL},
+        )
+
+    response.headers["ETag"] = etag
+    response.headers["Cache-Control"] = LEARNING_PATH_FEED_CACHE_CONTROL
     return payload
 
 

@@ -64,6 +64,31 @@ class LearningPathFeedStep(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class LearningPathFeedSummary(BaseModel):
+    """Slim listing-friendly summary of one publishable learning path.
+
+    Used by the learning-path feed (`GET /syndication/learning-paths`). Omits
+    the per-step list so the page payload stays bounded as paths grow;
+    partners follow up via `GET /syndication/learning-paths/{slug}` for the
+    full ordered-steps detail.
+    """
+
+    slug: str
+    title: str
+    description: str
+    step_count: int = Field(..., description="Number of published steps after filtering.")
+    estimated_minutes_total: int = Field(..., description="Sum of estimated minutes across published steps.")
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LearningPathFeedResponse(BaseModel):
+    meta: FeedMeta
+    items: list[LearningPathFeedSummary]
+
+
 class LearningPathFeedDetail(BaseModel):
     """Public syndication payload for one published learning path.
 
