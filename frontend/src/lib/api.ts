@@ -181,6 +181,7 @@ export function searchContent(
   query: string,
   contentType?: ContentType,
   limit?: number,
+  offset?: number,
 ): Promise<SearchResponse> {
   const params = new URLSearchParams({ q: query });
   if (contentType) {
@@ -188,6 +189,9 @@ export function searchContent(
   }
   if (limit !== undefined) {
     params.set("limit", String(limit));
+  }
+  if (offset !== undefined && offset > 0) {
+    params.set("offset", String(offset));
   }
   return fetchJson<SearchResponse>(`/search?${params.toString()}`);
 }

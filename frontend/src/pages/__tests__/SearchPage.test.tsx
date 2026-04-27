@@ -49,12 +49,39 @@ describe("SearchPage", () => {
     });
 
     await waitFor(() => {
-      expect(searchContent).toHaveBeenCalledWith("kubernetes", undefined);
+      expect(searchContent).toHaveBeenCalledWith("kubernetes", undefined, undefined, 0);
     });
     expect(
       await screen.findByRole("heading", { name: /Showing 1 of 1 result for "kubernetes"/i }),
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Kubernetes Intro" })).toBeInTheDocument();
     expect(screen.getByText(/score 12\.5/)).toBeInTheDocument();
+  });
+
+  it("paginates via the URL offset query param", async () => {
+    const response: SearchResponse = {
+      query: "kubernetes",
+      total: 50,
+      limit: 20,
+      offset: 20,
+      has_more: true,
+      results: [
+        { ...baseSummary, id: 1, score: 9.0, matched_fields: ["title"] },
+        { ...baseSummary, id: 2, score: 8.5, matched_fields: ["tags"] },
+        { ...baseSummary, id: 3, score: 8.0, matched_fields: ["description"] },
+      ],
+    };
+    vi.mocked(searchContent).mockResolvedValueOnce(response);
+
+    renderWithProviders(<SearchPage />, {
+      initialEntries: ["/search?q=kubernetes&offset=20"],
+    });
+
+    await waitFor(() => {
+      expect(searchContent).toHaveBeenCalledWith("kubernetes", undefined, undefined, 20);
+    });
+    expect(await screen.findByText(/Page 2 of 3/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 });

@@ -19,6 +19,7 @@ export const SearchPage = () => {
   const urlQuery = searchParams.get("q") ?? "";
   const urlContentType =
     (searchParams.get("content_type") as ContentType | "all" | null) ?? "all";
+  const urlOffset = Math.max(0, Number(searchParams.get("offset")) || 0);
 
   const [inputValue, setInputValue] = useState(urlQuery);
   const [contentType, setContentType] = useState<ContentType | "all">(urlContentType);
@@ -46,6 +47,8 @@ export const SearchPage = () => {
     searchContent(
       urlQuery,
       urlContentType === "all" ? undefined : urlContentType,
+      undefined,
+      urlOffset,
     )
       .then((data) => {
         if (isActive) {
@@ -63,7 +66,17 @@ export const SearchPage = () => {
     return () => {
       isActive = false;
     };
-  }, [urlQuery, urlContentType]);
+  }, [urlQuery, urlContentType, urlOffset]);
+
+  function goToOffset(nextOffset: number) {
+    const next = new URLSearchParams(searchParams);
+    if (nextOffset <= 0) {
+      next.delete("offset");
+    } else {
+      next.set("offset", String(nextOffset));
+    }
+    setSearchParams(next);
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -173,6 +186,29 @@ export const SearchPage = () => {
                   </div>
                 </article>
               ))}
+            </div>
+
+            <div className="pagination-controls">
+              <button
+                type="button"
+                className="pagination-button"
+                onClick={() => goToOffset(response.offset - response.limit)}
+                disabled={response.offset === 0 || loading}
+              >
+                Previous
+              </button>
+              <span className="pagination-status">
+                Page {Math.floor(response.offset / response.limit) + 1} of{" "}
+                {Math.max(1, Math.ceil(response.total / response.limit))}
+              </span>
+              <button
+                type="button"
+                className="pagination-button"
+                onClick={() => goToOffset(response.offset + response.limit)}
+                disabled={!response.has_more || loading}
+              >
+                Next
+              </button>
             </div>
           </>
         )}
