@@ -15,7 +15,7 @@ import { ContentType, ProgressStatus } from "./types";
 
 type ProgressMap = Map<string, ProgressStatus>;
 
-interface ProgressIndexContextValue {
+export interface ProgressIndexContextValue {
   statusFor: (
     contentType: ContentType | undefined,
     contentId: number | undefined,
@@ -25,7 +25,7 @@ interface ProgressIndexContextValue {
   error: string | null;
 }
 
-const ProgressIndexContext = createContext<ProgressIndexContextValue | undefined>(
+export const ProgressIndexContext = createContext<ProgressIndexContextValue | undefined>(
   undefined,
 );
 
