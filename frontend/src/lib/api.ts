@@ -13,6 +13,10 @@ import {
   TokenResponse,
   User,
 } from "./types";
+import {
+  getValidatorEntry,
+  setValidatorEntry,
+} from "./validatorCache";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(
   /\/$/,
@@ -42,19 +46,33 @@ interface ApiFilters {
   content_type?: ContentType;
 }
 
-async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
+type FetchJsonInit = RequestInit & { useValidatorCache?: boolean };
+
+async function fetchJson<T>(path: string, init?: FetchJsonInit): Promise<T> {
+  const { useValidatorCache, ...requestInit } = init ?? {};
+  const url = `${API_BASE_URL}${path}`;
+
+  const headers = new Headers(requestInit.headers);
   if (authToken) {
     headers.set("Authorization", `Bearer ${authToken}`);
   }
-  if (init?.body && !headers.has("Content-Type")) {
+  if (requestInit.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
+  const cachedEntry = useValidatorCache ? getValidatorEntry(url) : undefined;
+  if (cachedEntry) {
+    headers.set("If-None-Match", cachedEntry.etag);
+  }
+
+  const response = await fetch(url, {
+    ...requestInit,
     headers,
   });
+
+  if (useValidatorCache && response.status === 304 && cachedEntry) {
+    return cachedEntry.data as T;
+  }
 
   if (!response.ok) {
     let detail = `Request failed with status ${response.status}`;
@@ -69,7 +87,16 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(response.status, detail);
   }
 
-  return (await response.json()) as T;
+  const parsed = (await response.json()) as T;
+
+  if (useValidatorCache) {
+    const etag = response.headers.get("etag");
+    if (etag) {
+      setValidatorEntry(url, etag, parsed);
+    }
+  }
+
+  return parsed;
 }
 
 function buildQuery(filters?: ApiFilters): string {
@@ -193,5 +220,7 @@ export function searchContent(
   if (offset !== undefined && offset > 0) {
     params.set("offset", String(offset));
   }
-  return fetchJson<SearchResponse>(`/search?${params.toString()}`);
+  return fetchJson<SearchResponse>(`/search?${params.toString()}`, {
+    useValidatorCache: true,
+  });
 }
