@@ -10,6 +10,8 @@ import {
   ResourceKind,
   SearchResponse,
   Status,
+  SyndicatedLearningPathDetail,
+  SyndicatedLearningPathFeedResponse,
   TokenResponse,
   User,
 } from "./types";
@@ -223,4 +225,31 @@ export function searchContent(
   return fetchJson<SearchResponse>(`/search?${params.toString()}`, {
     useValidatorCache: true,
   });
+}
+
+export function fetchSyndicatedLearningPaths(
+  limit?: number,
+  offset?: number,
+): Promise<SyndicatedLearningPathFeedResponse> {
+  const params = new URLSearchParams();
+  if (limit !== undefined) {
+    params.set("limit", String(limit));
+  }
+  if (offset !== undefined && offset > 0) {
+    params.set("offset", String(offset));
+  }
+  const query = params.toString();
+  return fetchJson<SyndicatedLearningPathFeedResponse>(
+    `/syndication/learning-paths${query ? `?${query}` : ""}`,
+    { useValidatorCache: true },
+  );
+}
+
+export function fetchSyndicatedLearningPathDetail(
+  slug: string,
+): Promise<SyndicatedLearningPathDetail> {
+  return fetchJson<SyndicatedLearningPathDetail>(
+    `/syndication/learning-paths/${slug}`,
+    { useValidatorCache: true },
+  );
 }

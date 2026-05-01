@@ -106,3 +106,38 @@ export interface SearchResponse {
   has_more: boolean;
   results: SearchResult[];
 }
+
+export interface FeedMeta {
+  total: number;
+  generated_at: string;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface SyndicatedLearningPathSummary {
+  slug: string;
+  title: string;
+  description: string;
+  step_count: number;
+  estimated_minutes_total: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SyndicatedLearningPathStep {
+  position: number;
+  content_type: ContentType;
+  slug: string;
+  title: string;
+}
+
+export interface SyndicatedLearningPathDetail
+  extends SyndicatedLearningPathSummary {
+  steps: SyndicatedLearningPathStep[];
+}
+
+export interface SyndicatedLearningPathFeedResponse {
+  meta: FeedMeta;
+  items: SyndicatedLearningPathSummary[];
+}

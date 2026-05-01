@@ -10,6 +10,8 @@ import { LearningPathsPage } from "./pages/LearningPathsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { SearchPage } from "./pages/SearchPage";
+import { SyndicatedLearningPathDetailPage } from "./pages/SyndicatedLearningPathDetailPage";
+import { SyndicatedLearningPathsPage } from "./pages/SyndicatedLearningPathsPage";
 
 const App = () => {
   return (
@@ -61,6 +63,14 @@ const App = () => {
         <Route
           path="/learning-paths/:slug"
           element={<LearningPathDetailPage />}
+        />
+        <Route
+          path="/syndication/learning-paths"
+          element={<SyndicatedLearningPathsPage />}
+        />
+        <Route
+          path="/syndication/learning-paths/:slug"
+          element={<SyndicatedLearningPathDetailPage />}
         />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
