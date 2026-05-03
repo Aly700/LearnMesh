@@ -104,6 +104,20 @@ button {
   margin: 28px 0 0;
 }
 
+.nav-section {
+  display: grid;
+  gap: 10px;
+}
+
+.nav-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 4px 14px 0;
+}
+
 .nav-link {
   padding: 12px 14px;
   border-radius: 14px;

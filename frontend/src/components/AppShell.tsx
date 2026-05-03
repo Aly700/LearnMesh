@@ -3,14 +3,36 @@ import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../lib/auth";
 
-const navItems = [
-  { to: "/", label: "Dashboard", end: true },
-  { to: "/explore", label: "Explore" },
-  { to: "/search", label: "Search" },
-  { to: "/courses", label: "Courses" },
-  { to: "/tutorials", label: "Tutorials" },
-  { to: "/labs", label: "Labs" },
-  { to: "/learning-paths", label: "Learning Paths" },
+interface NavItem {
+  to: string;
+  label: string;
+  end?: boolean;
+}
+
+interface NavSection {
+  label?: string;
+  items: NavItem[];
+}
+
+const navSections: NavSection[] = [
+  {
+    items: [
+      { to: "/", label: "Dashboard", end: true },
+      { to: "/explore", label: "Explore" },
+      { to: "/search", label: "Search" },
+      { to: "/courses", label: "Courses" },
+      { to: "/tutorials", label: "Tutorials" },
+      { to: "/labs", label: "Labs" },
+      { to: "/learning-paths", label: "Learning Paths" },
+    ],
+  },
+  {
+    label: "Public Syndication",
+    items: [
+      { to: "/syndication/content", label: "Syndicated Content" },
+      { to: "/syndication/learning-paths", label: "Syndicated Paths" },
+    ],
+  },
 ];
 
 export const AppShell = () => {
@@ -55,17 +77,27 @@ export const AppShell = () => {
         </form>
 
         <nav className="nav-list" aria-label="Primary">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              className={({ isActive }) =>
-                isActive ? "nav-link active" : "nav-link"
-              }
-              end={item.end}
-              to={item.to}
+          {navSections.map((section, sectionIndex) => (
+            <div
+              className="nav-section"
+              key={section.label ?? `nav-section-${sectionIndex}`}
             >
-              {item.label}
-            </NavLink>
+              {section.label ? (
+                <span className="nav-section-label">{section.label}</span>
+              ) : null}
+              {section.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  className={({ isActive }) =>
+                    isActive ? "nav-link active" : "nav-link"
+                  }
+                  end={item.end}
+                  to={item.to}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
 
