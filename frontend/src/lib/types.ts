@@ -141,3 +141,25 @@ export interface SyndicatedLearningPathFeedResponse {
   meta: FeedMeta;
   items: SyndicatedLearningPathSummary[];
 }
+
+export interface SyndicatedContentSummary {
+  content_type: ContentType;
+  slug: string;
+  title: string;
+  description: string;
+  difficulty: Difficulty;
+  estimated_minutes: number;
+  tags: string[];
+  author: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SyndicatedContentDetail extends SyndicatedContentSummary {
+  body_markdown: string;
+}
+
+export interface SyndicatedContentFeedResponse {
+  meta: FeedMeta;
+  items: SyndicatedContentSummary[];
+}

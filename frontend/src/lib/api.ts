@@ -10,6 +10,8 @@ import {
   ResourceKind,
   SearchResponse,
   Status,
+  SyndicatedContentDetail,
+  SyndicatedContentFeedResponse,
   SyndicatedLearningPathDetail,
   SyndicatedLearningPathFeedResponse,
   TokenResponse,
@@ -250,6 +252,38 @@ export function fetchSyndicatedLearningPathDetail(
 ): Promise<SyndicatedLearningPathDetail> {
   return fetchJson<SyndicatedLearningPathDetail>(
     `/syndication/learning-paths/${slug}`,
+    { useValidatorCache: true },
+  );
+}
+
+export function fetchSyndicatedContentFeed(
+  contentType?: ContentType,
+  limit?: number,
+  offset?: number,
+): Promise<SyndicatedContentFeedResponse> {
+  const params = new URLSearchParams();
+  if (contentType) {
+    params.set("content_type", contentType);
+  }
+  if (limit !== undefined) {
+    params.set("limit", String(limit));
+  }
+  if (offset !== undefined && offset > 0) {
+    params.set("offset", String(offset));
+  }
+  const query = params.toString();
+  return fetchJson<SyndicatedContentFeedResponse>(
+    `/syndication/feed${query ? `?${query}` : ""}`,
+    { useValidatorCache: true },
+  );
+}
+
+export function fetchSyndicatedContentDetail(
+  contentType: ContentType,
+  slug: string,
+): Promise<SyndicatedContentDetail> {
+  return fetchJson<SyndicatedContentDetail>(
+    `/syndication/content/${contentType}/${slug}`,
     { useValidatorCache: true },
   );
 }
