@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
 import { EmptyState } from "../components/EmptyState";
 import { LoadingState } from "../components/LoadingState";
@@ -121,9 +121,22 @@ export const SyndicatedLearningPathDetailPage = () => {
                     {formatLabel(step.content_type)}
                   </span>
                 </div>
-                <h3>{step.title}</h3>
+                <h3>
+                  <Link
+                    className="inline-link"
+                    to={`/syndication/content/${step.content_type}/${step.slug}`}
+                  >
+                    {step.title}
+                  </Link>
+                </h3>
                 <p className="panel-subtitle">
-                  Slug: <code>{step.slug}</code>
+                  Slug:{" "}
+                  <Link
+                    className="inline-link"
+                    to={`/syndication/content/${step.content_type}/${step.slug}`}
+                  >
+                    <code>{step.slug}</code>
+                  </Link>
                 </p>
               </div>
             </article>
