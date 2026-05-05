@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -27,5 +28,28 @@ describe("AppShell primary nav", () => {
 
     const pathsLink = screen.getByRole("link", { name: "Syndicated Paths" });
     expect(pathsLink).toHaveAttribute("href", "/syndication/learning-paths");
+  });
+
+  it("toggles the mobile nav panel via the disclosure button", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AppShell />
+      </MemoryRouter>,
+    );
+
+    const toggle = screen.getByRole("button", { name: /open navigation/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveAttribute("aria-controls", "primary-nav");
+
+    const panel = document.getElementById("primary-nav");
+    expect(panel).not.toBeNull();
+    expect(panel).toHaveAttribute("data-open", "false");
+
+    await userEvent.click(toggle);
+
+    const openToggle = screen.getByRole("button", { name: /close navigation/i });
+    expect(openToggle).toHaveAttribute("aria-expanded", "true");
+    expect(panel).toHaveAttribute("data-open", "true");
+    expect(screen.getByText("Public Syndication")).toBeInTheDocument();
   });
 });
