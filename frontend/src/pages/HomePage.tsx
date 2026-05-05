@@ -3,8 +3,10 @@ import { Link } from "react-router-dom";
 
 import { ContentCard } from "../components/ContentCard";
 import { EmptyState } from "../components/EmptyState";
+import { HomeDashboardPreview } from "../components/HomeDashboardPreview";
+import { HomeFeatureGrid } from "../components/HomeFeatureGrid";
+import { HomeHero } from "../components/HomeHero";
 import { LoadingState } from "../components/LoadingState";
-import { useContinueLearning } from "../hooks/useContinueLearning";
 import { usePathProgress } from "../hooks/usePathProgress";
 import { fetchCatalog, fetchLearningPaths } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -44,8 +46,6 @@ const HomePathCard = ({ path }: { path: LearningPath }) => {
 };
 
 export const HomePage = () => {
-  const { user } = useAuth();
-  const continueLearning = useContinueLearning();
   const [catalog, setCatalog] = useState<ContentSummary[]>([]);
   const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,53 +87,15 @@ export const HomePage = () => {
 
   return (
     <>
-      <section className="surface hero">
-        <div>
-          <span className="eyebrow">Developer Education Platform</span>
-          <h2>Curated technical learning for developers, shipped like a real product.</h2>
-          <p>
-            LearnMesh now supports richer browsing, lesson detail pages, markdown
-            content, and guided learning paths that make the demo feel much closer
-            to a real education platform.
-          </p>
-          <div className="hero-actions">
-            <Link className="primary-link-button" to="/explore">
-              Explore catalog
-            </Link>
-            <Link className="secondary-link-button" to="/learning-paths">
-              View learning paths
-            </Link>
-          </div>
-        </div>
+      <HomeHero />
 
-        <div className="hero-side-panel">
-          <strong>Phase 2 experience</strong>
-          <ul>
-            <li>Unified explore flow across multiple learning formats</li>
-            <li>Long-form markdown content for developer lessons</li>
-            <li>Timeline-style learning paths with step-by-step navigation</li>
-          </ul>
-        </div>
-      </section>
+      <HomeDashboardPreview
+        catalog={catalog}
+        learningPaths={learningPaths}
+        loading={loading}
+      />
 
-      {user && continueLearning.items.length > 0 ? (
-        <section className="surface page-section">
-          <div className="section-heading">
-            <h3>Continue learning</h3>
-            <span className="footer-note">
-              Pick up where you left off — showing items you marked in progress.
-            </span>
-          </div>
-          <div className="highlights-grid">
-            {continueLearning.items.map((item) => (
-              <ContentCard
-                key={`${item.content_type}-${item.content_id}`}
-                item={item.content}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
+      <HomeFeatureGrid />
 
       <section className="surface page-section">
         <div className="section-heading">

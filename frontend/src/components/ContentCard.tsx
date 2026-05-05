@@ -16,6 +16,7 @@ export const ContentCard = ({ item }: ContentCardProps) => {
 
   return (
     <article className="content-card">
+      <span className="content-card-accent" aria-hidden="true" />
       <div className="card-kicker-row">
         <span className="type-pill">{formatLabel(item.content_type)}</span>
         <span className={`status-pill ${item.status}`}>{formatLabel(item.status)}</span>
