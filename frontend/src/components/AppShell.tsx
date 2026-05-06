@@ -206,10 +206,6 @@ export const AppShell = () => {
           )}
         </div>
 
-        <div className="sidebar-footer">
-          Phase 2 adds detail views, markdown-based lessons, richer browsing, and
-          learning paths that feel closer to a real platform.
-        </div>
       </aside>
 
       <main className="main-content">

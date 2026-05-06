@@ -1468,10 +1468,12 @@ button {
   transition: background-color 160ms ease, border-color 160ms ease;
 }
 
-.mobile-bar-toggle:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: rgba(24, 98, 241, 0.24);
+@media (hover: hover) {
+  .mobile-bar-toggle:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: rgba(24, 98, 241, 0.24);
+  }
 }
 
 .mobile-bar-toggle:focus-visible {
