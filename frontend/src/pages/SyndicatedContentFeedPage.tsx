@@ -1,12 +1,22 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { EmptyState } from "../components/EmptyState";
 import { LoadingState } from "../components/LoadingState";
 import { TagBadge } from "../components/TagBadge";
 import { fetchSyndicatedContentFeed } from "../lib/api";
 import { formatLabel } from "../lib/content";
-import { SyndicatedContentSummary } from "../lib/types";
+import {
+  ContentType,
+  SyndicatedContentFeedResponse,
+  SyndicatedContentSummary,
+} from "../lib/types";
+
+const VALID_CONTENT_TYPES: ContentType[] = ["course", "tutorial", "lab"];
+
+function isContentType(value: string | null): value is ContentType {
+  return value !== null && (VALID_CONTENT_TYPES as string[]).includes(value);
+}
 
 const SyndicatedContentCard = ({
   item,
@@ -41,17 +51,30 @@ const SyndicatedContentCard = ({
 };
 
 export const SyndicatedContentFeedPage = () => {
-  const [items, setItems] = useState<SyndicatedContentSummary[]>([]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlOffset = Math.max(0, Number(searchParams.get("offset")) || 0);
+  const rawContentType = searchParams.get("content_type");
+  const validatedContentType: ContentType | undefined = isContentType(
+    rawContentType,
+  )
+    ? rawContentType
+    : undefined;
+
+  const [response, setResponse] = useState<SyndicatedContentFeedResponse | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isActive = true;
+    setLoading(true);
+    setError(null);
 
-    fetchSyndicatedContentFeed()
+    fetchSyndicatedContentFeed(validatedContentType, undefined, urlOffset)
       .then((data) => {
         if (isActive) {
-          setItems(data.items);
+          setResponse(data);
           setLoading(false);
         }
       })
@@ -67,7 +90,17 @@ export const SyndicatedContentFeedPage = () => {
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [urlOffset, validatedContentType]);
+
+  function goToOffset(nextOffset: number) {
+    const next = new URLSearchParams(searchParams);
+    if (nextOffset <= 0) {
+      next.delete("offset");
+    } else {
+      next.set("offset", String(nextOffset));
+    }
+    setSearchParams(next);
+  }
 
   return (
     <>
@@ -96,20 +129,53 @@ export const SyndicatedContentFeedPage = () => {
             title="Loading syndicated content"
             message="Fetching the public content feed."
           />
-        ) : items.length === 0 ? (
+        ) : !response || response.items.length === 0 ? (
           <EmptyState
             title="No syndicated content yet"
             message="No published content is currently available on the public feed."
           />
         ) : (
-          <div className="path-grid">
-            {items.map((item) => (
-              <SyndicatedContentCard
-                key={`${item.content_type}-${item.slug}`}
-                item={item}
-              />
-            ))}
-          </div>
+          <>
+            <div className="path-grid">
+              {response.items.map((item) => (
+                <SyndicatedContentCard
+                  key={`${item.content_type}-${item.slug}`}
+                  item={item}
+                />
+              ))}
+            </div>
+
+            <div className="pagination-controls">
+              <button
+                type="button"
+                className="pagination-button"
+                onClick={() =>
+                  goToOffset(response.meta.offset - response.meta.limit)
+                }
+                disabled={response.meta.offset === 0 || loading}
+              >
+                Previous
+              </button>
+              <span className="pagination-status">
+                Page{" "}
+                {Math.floor(response.meta.offset / response.meta.limit) + 1} of{" "}
+                {Math.max(
+                  1,
+                  Math.ceil(response.meta.total / response.meta.limit),
+                )}
+              </span>
+              <button
+                type="button"
+                className="pagination-button"
+                onClick={() =>
+                  goToOffset(response.meta.offset + response.meta.limit)
+                }
+                disabled={!response.meta.has_more || loading}
+              >
+                Next
+              </button>
+            </div>
+          </>
         )}
       </section>
     </>
